@@ -1,0 +1,22 @@
+name: Deploy to EKS
+on:
+  push: { branches: [main] }
+permissions: { contents: read, id-token: write }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: aws-actions/configure-aws-credentials@v4
+      with: { role-to-assume: arn:aws:iam::ACCOUNT:role/GitHubActionsRole, aws-region: us-east-1 }
+    - uses: aws-actions/amazon-eks-action@v1
+      id: eks
+      with:
+        cluster-name: my-eks-cluster
+        kubeconfig: true
+    - name: Deploy Manifests
+      run: |
+        kubectl apply -f k8s/namespaces/
+        kubectl apply -f k8s/service-a/ --wait=true
+        kubectl apply -f k8s/service-b/ --wait=true

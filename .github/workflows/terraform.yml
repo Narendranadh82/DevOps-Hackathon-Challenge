@@ -1,0 +1,43 @@
+name: Terraform IaC
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./terraform
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.9.7
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::ACCOUNT:role/GitHubActionsRole
+        aws-region: us-east-1
+
+    - name: Terraform Format
+      if: github.event_name == 'pull_request'
+      run: terraform fmt -check=strict
+
+    - name: Terraform Init & Validate
+      if: github.event_name == 'pull_request'
+      run: terraform init && terraform validate
+
+    - name: Terraform Plan
+      id: plan
+      if: github.event_name == 'pull_request'
+      run: terraform init -backend-config="bucket=your-tf-state" -backend-config="key=dev/terraform.tfstate" && terraform plan -input=false -out=tfplan
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: terraform init -backend-config="bucket=your-tf-state" && terraform apply -auto-approve tfplan
