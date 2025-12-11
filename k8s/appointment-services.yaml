@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: appointment-service
+  namespace: ns1
+  labels:
+    app: appointment-service
+spec:
+  type: ClusterIP           
+  selector:
+    app: appointment-service          
+  ports:
+    - protocol: TCP
+      port: 80              
+      targetPort: 8080      

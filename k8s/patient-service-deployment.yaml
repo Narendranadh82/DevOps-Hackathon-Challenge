@@ -1,0 +1,377 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: microservices
+  labels:
+    name: microservices
+---
+# -----------------------------------------
+# ConfigMap for service-a
+# -----------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svc-a-config
+  namespace: microservices
+data:
+  APP_NAME: "service-a"
+  LOG_LEVEL: "info"
+  # example: application-specific config
+  EXTERNAL_API_URL: "https://api.example.com/v1"
+---
+# -----------------------------------------
+# ConfigMap for service-b
+# -----------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svc-b-config
+  namespace: microservices
+data:
+  APP_NAME: "service-b"
+  LOG_LEVEL: "info"
+  FEATURE_FLAG_X: "true"
+---
+# -----------------------------------------
+# Secrets for service-a (use stringData to avoid base64 manually)
+# -----------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: svc-a-secret
+  namespace: microservices
+type: Opaque
+stringData:
+  DATABASE_HOST: "rds-postgres-a.cluster-xxxxxxxx.us-east-1.rds.amazonaws.com"
+  DATABASE_NAME: "svc_a_db"
+  DATABASE_USER: "svc_a_user"
+  DATABASE_PASSWORD: "ReplaceWithStrongPasswordA"
+---
+# -----------------------------------------
+# Secrets for service-b
+# -----------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: svc-b-secret
+  namespace: microservices
+type: Opaque
+stringData:
+  DATABASE_HOST: "rds-postgres-b.cluster-xxxxxxxx.us-east-1.rds.amazonaws.com"
+  DATABASE_NAME: "svc_b_db"
+  DATABASE_USER: "svc_b_user"
+  DATABASE_PASSWORD: "ReplaceWithStrongPasswordB"
+---
+# -----------------------------------------
+# ServiceAccounts (use if you want IRSA / fine-grained IAM)
+# -----------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: svc-a-sa
+  namespace: microservices
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: svc-b-sa
+  namespace: microservices
+---
+# -----------------------------------------
+# Deployment for service-a
+# -----------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a
+  namespace: microservices
+  labels:
+    app: service-a
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-a
+  template:
+    metadata:
+      labels:
+        app: service-a
+    spec:
+      serviceAccountName: svc-a-sa
+      containers:
+        - name: service-a
+          # replace with your ECR image
+          image: <ACCOUNT_ID>.dkr.ecr.<region>.amazonaws.com/service-a:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: svc-a-config
+                  key: APP_NAME
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: svc-a-config
+                  key: LOG_LEVEL
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: svc-a-secret
+                  key: DATABASE_HOST
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: svc-a-secret
+                  key: DATABASE_NAME
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: svc-a-secret
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: svc-a-secret
+                  key: DATABASE_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+# -----------------------------------------
+# Deployment for service-b
+# -----------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-b
+  namespace: microservices
+  labels:
+    app: service-b
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-b
+  template:
+    metadata:
+      labels:
+        app: service-b
+    spec:
+      serviceAccountName: svc-b-sa
+      containers:
+        - name: service-b
+          image: <ACCOUNT_ID>.dkr.ecr.<region>.amazonaws.com/service-b:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: svc-b-config
+                  key: APP_NAME
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: svc-b-config
+                  key: LOG_LEVEL
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: svc-b-secret
+                  key: DATABASE_HOST
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: svc-b-secret
+                  key: DATABASE_NAME
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: svc-b-secret
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: svc-b-secret
+                  key: DATABASE_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "256Mi"
+            limits:
+              cpu: "700m"
+              memory: "1Gi"
+---
+# -----------------------------------------
+# Service for service-a (ClusterIP)
+# -----------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a
+  namespace: microservices
+  labels:
+    app: service-a
+spec:
+  type: ClusterIP
+  selector:
+    app: service-a
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+---
+# -----------------------------------------
+# Service for service-b (ClusterIP)
+# -----------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-b
+  namespace: microservices
+  labels:
+    app: service-b
+spec:
+  type: ClusterIP
+  selector:
+    app: service-b
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+---
+# -----------------------------------------
+# HorizontalPodAutoscaler for service-a (autoscaling/v2)
+# -----------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: service-a-hpa
+  namespace: microservices
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: service-a
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+---
+# -----------------------------------------
+# HorizontalPodAutoscaler for service-b
+# -----------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: service-b-hpa
+  namespace: microservices
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: service-b
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+---
+# -----------------------------------------
+# Ingress (example) - adjust annotations for your controller (ALB / nginx)
+# -----------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: microservices-ingress
+  namespace: microservices
+  annotations:
+    # Example ALB annotations - change/remove if you use nginx or another ingress controller
+    kubernetes.io/ingress.class: "alb"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: "/health"
+    alb.ingress.kubernetes.io/healthcheck-port: "80"
+    # Use cert-manager or AWS ACM for TLS termination; replace tls secret name below if used
+spec:
+  ingressClassName: alb
+  rules:
+    - host: service-a.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: service-a
+                port:
+                  number: 80
+    - host: service-b.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: service-b
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - service-a.example.com
+        - service-b.example.com
+      secretName: microservices-tls
